@@ -15,7 +15,7 @@ struct RegistryTests {
         #expect(registry.optimizer(for: fromExtension) is JPEGOptimizer)
     }
 
-    @Test(arguments: [UTType.svg, .text, .mp3])
+    @Test(arguments: [UTType.svg, .text, .wav, .avi])
     func `types without an optimizer return nil`(type: UTType) {
         #expect(registry.optimizer(for: type) == nil)
     }
@@ -36,5 +36,15 @@ struct MoreRegistryTests {
         #expect(registry.optimizer(for: .webP) is WebPOptimizer)
         #expect(registry.optimizer(for: .heic) is ImageIOOptimizer)
         #expect(registry.optimizer(for: .tiff) is ImageIOOptimizer)
+        #expect(registry.optimizer(for: .mpeg4Movie) is VideoOptimizer)
+        #expect(registry.optimizer(for: .quickTimeMovie) is VideoOptimizer)
+        #expect(registry.optimizer(for: .mp3) is AudioOptimizer)
+        #expect(registry.optimizer(for: .mpeg4Audio) is AudioOptimizer)
+        #expect(registry.optimizer(for: .pdf) is PDFOptimizer)
+    }
+
+    @Test(arguments: zip([1, 50, 70, 100], [64, 128, 192, 256]))
+    func `audio bitrate follows the quality slider`(quality: Int, kbps: Int) {
+        #expect(AudioOptimizer.bitrate(quality: quality) == kbps)
     }
 }

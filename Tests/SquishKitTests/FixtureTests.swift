@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import ImageIO
 import Testing
@@ -23,6 +24,23 @@ struct FixtureTests {
         #expect(result.error == nil)
         #expect(result.improved, "\(name): \(result.originalSize) to \(result.newSize)")
         try expectSameDimensions(input, output)
+    }
+
+    /// Video, audio and PDF with default settings.
+    @Test(.enabled(if: toolsBuilt), arguments: ["sample.mp4", "sample.m4a", "sample.mp3", "sample.pdf"])
+    func `media and PDF get smaller and stay readable`(name: String) async throws {
+        let input = Self.fixtures.appending(path: name)
+        let output = out.appending(path: name)
+        let result = await pipeline.optimize(input, to: output, formats: FormatSettings())
+        #expect(result.error == nil)
+        #expect(result.improved, "\(name): \(result.originalSize) to \(result.newSize)")
+        if name.hasSuffix(".pdf") {
+            #expect(CGPDFDocument(output as CFURL)?.numberOfPages == 1)
+        } else {
+            let asset = AVURLAsset(url: output)
+            let duration = try await asset.load(.duration).seconds
+            #expect(abs(duration - 3) < 0.2, "\(name) lasts \(duration) s")
+        }
     }
 
     /// Fixtures that may already be minimal: no error, and any output is still a valid image.

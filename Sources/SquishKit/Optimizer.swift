@@ -67,6 +67,7 @@ public struct OptimizerRegistry: Sendable {
 
     public static let standard = OptimizerRegistry([
         PNGOptimizer(), JPEGOptimizer(), GIFOptimizer(), WebPOptimizer(), ImageIOOptimizer(),
+        VideoOptimizer(), AudioOptimizer(), PDFOptimizer(),
     ])
 
     public func optimizer(for type: UTType) -> (any Optimizer)? {

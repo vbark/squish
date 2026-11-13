@@ -2,24 +2,34 @@
 
 # Squish
 
-A free, open-source macOS menu bar app that makes images smaller: lossless by default, metadata stripped, originals kept for restore. Inspired by Clop.
-
-Status: **M1**. Manual optimization of PNG and JPEG (menu bar "Optimize Files…" or drag onto the menu panel), toast with restore, the full settings window, and settings sync. Clipboard watching (M2), folder watching (M3), SVG to PNG (M4), and video, audio and PDF (M5) are next.
+A free, open-source macOS menu bar app that makes media smaller. It watches your clipboard and chosen folders, strips metadata, recompresses images, video, audio and PDF, and keeps every original so you can restore it. It also converts SVG to PNG at any scale. Inspired by Clop.
 
 Requires macOS 14 or later. Licensed under the [GNU GPL v3](LICENSE).
 
+## What it does
+
+- **Clipboard.** Copy an image (PNG, JPEG, HEIC, GIF, WebP, TIFF) and the clipboard gets a smaller version. TIFF, which many apps copy, becomes PNG. Copied files (video, audio and PDF too, when switched on) are replaced on the clipboard by optimized copies; the originals on disk are never touched. Squish marks what it writes and never processes its own output, and skips anything password managers mark as concealed.
+- **Folders.** New or changed files in watched folders (Desktop and Downloads by default) are optimized in place once they stop changing. In-progress downloads (`.download`, `.crdownload`, `.part`…) are ignored, cloud placeholders in iCloud Drive or OneDrive are never downloaded, and files already there when Squish starts are left alone. Each folder has its own file types and subfolder setting.
+- **Backups.** Every replaced original is kept in `~/Library/Caches/app.squish.Squish/backups` for 7 days (configurable). Restore from the toast.
+- **SVG to PNG.** From the menu, by dropping SVGs on the menu panel, or with Finder's **Services › Convert SVG to PNG with Squish**. Pick 0.5×, 1×, 2×, 3× or any scale and see the pixel size live. Output goes next to the SVG as `icon@2x.png` or `icon-512x512.png`, and never overwrites the SVG or a PNG you made.
+- **Lossless by default.** Lossy mode with a quality slider per format. Video and audio are always re-encoded, and a result is only kept when it is smaller.
+- **Settings sync.** General › Sync settings keeps a `settings.json` in iCloud Drive, OneDrive or any folder. Every Mac using the folder picks up changes within 15 seconds; the newest change wins. Watched folders are stored as `~/…` so the file works on every Mac.
+
 ## Build
 
-Everything is a Swift package, so Xcode is optional: Command Line Tools with Swift 6.2 or later work.
+Everything is a Swift package. Xcode 16 or later is recommended; Command Line Tools with Swift 6.2 or later also work.
 
 ```sh
-# 1. Build the bundled optimizers (one time, takes a few minutes)
-brew install rustup cmake nasm && rustup-init -y
-Scripts/build-tools.sh            # writes universal binaries to Vendor/bin
+# 1. Build the bundled tools from pinned source (one time, about 10 minutes)
+brew install rustup cmake nasm && rustup default stable
+Scripts/build-tools.sh            # universal static binaries in Vendor/bin
 
-# 2. Build and run the app
-Scripts/bundle.sh                 # writes build/Squish.app, ad-hoc signed
+# 2. Build, sign (ad-hoc) and run
+Scripts/bundle.sh                 # build/Squish.app
 open build/Squish.app
+
+# 3. Optional: a DMG
+Scripts/package-dmg.sh            # build/Squish-<version>.dmg
 ```
 
 For a quick loop without bundling: `SQUISH_BIN_DIR=$PWD/Vendor/bin swift run Squish`.
@@ -30,7 +40,7 @@ For a quick loop without bundling: `SQUISH_BIN_DIR=$PWD/Vendor/bin swift run Squ
 swift test
 ```
 
-With Command Line Tools only (no Xcode), the Swift Testing macro plugin has to be passed explicitly:
+Fixture tests in `Tests/Fixtures` run every format through the real tools and are skipped until `Scripts/build-tools.sh` has run. With Command Line Tools only (no Xcode), pass the testing macro plugin:
 
 ```sh
 swift test -Xswiftc -load-plugin-library \
@@ -41,17 +51,13 @@ swift test -Xswiftc -load-plugin-library \
 
 | Path | Job |
 |---|---|
-| `Sources/SquishKit` | Settings model and JSON sync file, optimizer protocol and registry, PNG/JPEG optimizers, tool runner, pipeline with concurrency limit, backups |
-| `Sources/Squish` | The menu bar app: `MenuBarExtra` panel, toast panel, settings window, settings store |
-| `Tests/SquishKitTests` | Registry selection, settings decoding, pipeline replace/skip/error paths, JPEG orientation |
-| `Scripts/build-tools.sh` | Builds pinned optimizer versions from source as universal binaries |
-| `Scripts/bundle.sh` | Assembles and signs `Squish.app` |
+| `Sources/SquishKit` | Settings model and sync file, optimizer protocol, registry and one optimizer per format, tool runner, pipeline with a concurrency limit, backups, folder events, self-write guard, SVG sizing and rendering |
+| `Sources/Squish` | The menu bar app: menu panel, toast, settings window, clipboard and folder services, SVG popup and Services provider |
+| `Tests/SquishKitTests` | Unit tests (registry, settings decoding, stability, loop prevention, folder rules, clipboard rules, SVG sizes and names) and fixture tests |
+| `Scripts/build-tools.sh` | Builds pinned optimizer versions from source as universal static binaries |
+| `Scripts/bundle.sh`, `Scripts/package-dmg.sh` | Assemble, sign, package and optionally notarize |
 
-## Settings sync
-
-General › Sync settings writes a `settings.json` to a folder you pick: iCloud Drive, any OneDrive account under `~/Library/CloudStorage`, or any other folder. Each Mac checks the file every 15 seconds and the newest change wins. Watched folders are stored relative to your home folder (`~/Desktop`), so the same file works on every Mac. Pause, open at login and the choice of sync folder stay on each Mac.
-
-When you turn sync on and the folder already has settings, Squish asks whether to use them or replace them.
+Logs go to the unified log under the subsystem `app.squish.Squish.<module>`; filter for it in Console.
 
 ## Bundled tools
 
@@ -60,16 +66,28 @@ When you turn sync on and the folder already has settings, Squish asks whether t
 | [oxipng](https://github.com/oxipng/oxipng) | 10.2.1 | MIT | Lossless PNG |
 | [pngquant](https://github.com/kornelski/pngquant) | 3.0.3 | GPL-3.0-or-later | Lossy PNG |
 | [mozjpeg](https://github.com/mozilla/mozjpeg) (`jpegtran`, `cjpeg`) | 4.1.5 | IJG, BSD-3-Clause, zlib | JPEG |
+| [gifsicle](https://www.lcdf.org/gifsicle/) | 1.98 | GPL-2.0-only | GIF |
+| [libwebp](https://github.com/webmproject/libwebp) (`cwebp`, `webpmux`) | 1.6.0 | BSD-3-Clause | WebP |
+| [resvg](https://github.com/linebender/resvg) | 0.50.0 | Apache-2.0 OR MIT | SVG rendering |
+| [qpdf](https://github.com/qpdf/qpdf) | 12.4.2 | Apache-2.0 | PDF |
+| [FFmpeg](https://ffmpeg.org) | 9.0.2 | LGPL-2.1-or-later | Video and audio, using Apple's VideoToolbox and AudioToolbox encoders |
 
-Tools for GIF, WebP, SVG, video and PDF are added with their milestones. `Scripts/build-tools.sh` pins the exact source tags we ship.
+HEIC and TIFF use macOS ImageIO. FFmpeg is built without `--enable-gpl` and without third-party codecs. `Scripts/build-tools.sh` records the exact source tags and build flags, and serves as the corresponding source for the GPL and LGPL tools.
 
-## Releasing (Developer ID + notarization)
+## Releasing with a Developer ID
+
+The default build is ad-hoc signed, which runs on the Mac that built it. To distribute:
 
 ```sh
-SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" Scripts/bundle.sh
-ditto -c -k --keepParent build/Squish.app build/Squish.zip
-xcrun notarytool submit build/Squish.zip --keychain-profile squish-notary --wait
-xcrun stapler staple build/Squish.app
+xcrun notarytool store-credentials squish-notary   # once
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=squish-notary Scripts/package-dmg.sh
 ```
 
-Create the keychain profile once with `xcrun notarytool store-credentials squish-notary`. DMG packaging is part of M5.
+This signs the bundled tools and the app with the hardened runtime, builds the DMG, notarizes it and staples the ticket.
+
+## Known limits
+
+- Video re-encoding uses VideoToolbox's constant-quality mode, which needs Apple silicon. On Intel Macs video jobs fail and leave the file untouched.
+- Lossy HEIC re-encoding drops HDR gain maps.
+- MP3 is only stripped of tags; WAV and AIFF are not supported, because changing the format would rename the file.
+- Settings sync replaces the whole settings file; there is no per-setting merge.

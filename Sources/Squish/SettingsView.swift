@@ -270,20 +270,26 @@ private struct FolderRow: View {
 private struct FormatsTab: View {
     @Environment(SettingsStore.self) private var store
 
-    private static let formats: [(String, WritableKeyPath<FormatSettings, FormatOptions>)] = [
-        ("PNG", \.png), ("JPEG", \.jpeg), ("GIF", \.gif), ("WebP", \.webp), ("HEIC", \.heic),
-        ("Video", \.video), ("Audio", \.audio), ("PDF", \.pdf),
+    private static let images: [(String, WritableKeyPath<FormatSettings, FormatOptions>)] = [
+        ("PNG", \.png), ("JPEG", \.jpeg), ("GIF", \.gif), ("WebP", \.webp), ("HEIC", \.heic), ("PDF", \.pdf),
     ]
 
     var body: some View {
         @Bindable var store = store
         Form {
             Section {
-                ForEach(Self.formats, id: \.0) { name, keyPath in
+                ForEach(Self.images, id: \.0) { name, keyPath in
                     FormatRow(name: name, options: $store.settings.formats[dynamicMember: keyPath])
                 }
             } footer: {
-                Text("Lossless keeps every pixel and only removes metadata and wasted bytes. Lossy trades quality for size.")
+                Text("Lossless keeps every pixel and only removes metadata and wasted bytes. Lossy trades quality for size; for PDF it recompresses the images inside.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
+                QualityRow(name: "Video", quality: $store.settings.formats.video.quality)
+                QualityRow(name: "Audio", quality: $store.settings.formats.audio.quality)
+            } footer: {
+                Text("Video is re-encoded as HEVC and AAC audio with the Mac's hardware encoder, which needs Apple silicon. MP3 files only lose their tags. A result is kept only if it is smaller.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -302,16 +308,21 @@ private struct FormatRow: View {
             }
             .pickerStyle(.segmented)
             if options.lossy {
-                LabeledContent("Quality") {
-                    HStack {
-                        Slider(
-                            value: Binding(get: { Double(options.quality) }, set: { options.quality = Int($0) }),
-                            in: 10...100, step: 5
-                        )
-                        Text("\(options.quality)").monospacedDigit().frame(width: 28, alignment: .trailing)
-                    }
-                }
-                .font(.callout)
+                QualityRow(name: "Quality", quality: $options.quality).font(.callout)
+            }
+        }
+    }
+}
+
+private struct QualityRow: View {
+    let name: String
+    @Binding var quality: Int
+
+    var body: some View {
+        LabeledContent(name) {
+            HStack {
+                Slider(value: Binding(get: { Double(quality) }, set: { quality = Int($0) }), in: 10...100, step: 5)
+                Text("\(quality)").monospacedDigit().frame(width: 28, alignment: .trailing)
             }
         }
     }

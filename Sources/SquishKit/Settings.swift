@@ -32,7 +32,7 @@ public struct FormatSettings: Codable, Equatable, Sendable {
     public var webp = FormatOptions()
     public var heic = FormatOptions()
     public var video = FormatOptions(lossy: true, quality: 70)
-    public var audio = FormatOptions(lossy: true, quality: 70)
+    public var audio = FormatOptions(lossy: true, quality: 50)
     public var pdf = FormatOptions()
 
     public init() {}
