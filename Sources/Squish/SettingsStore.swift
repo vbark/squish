@@ -8,8 +8,15 @@ import SquishKit
 @Observable
 final class SettingsStore {
     var settings: Settings {
-        didSet { if settings != oldValue, !applyingRemote { settingsChanged() } }
+        didSet {
+            guard settings != oldValue else { return }
+            if !applyingRemote { settingsChanged() }
+            onChange?()
+        }
     }
+
+    /// Called after every change, local or synced from another Mac.
+    @ObservationIgnored var onChange: (() -> Void)?
 
     private(set) var syncFolder: URL?
     private(set) var syncError: String?

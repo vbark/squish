@@ -10,7 +10,10 @@ final class AppModel {
 
     /// Device-only, so it does not sync.
     var isPaused = UserDefaults.standard.bool(forKey: "paused") {
-        didSet { UserDefaults.standard.set(isPaused, forKey: "paused") }
+        didSet {
+            UserDefaults.standard.set(isPaused, forKey: "paused")
+            folders.update()
+        }
     }
 
     /// Files replaced in place, newest first, at most 20.
@@ -19,6 +22,7 @@ final class AppModel {
 
     @ObservationIgnored private let pipeline: Pipeline
     @ObservationIgnored private(set) var clipboard: ClipboardService!
+    @ObservationIgnored private var folders: FolderService!
 
     static let supportedTypes: [UTType] = OptimizerRegistry.standard.optimizers.flatMap(\.types)
 
@@ -31,9 +35,18 @@ final class AppModel {
             pipeline: pipeline,
             settings: { [unowned self] in self.settings.settings },
             isActive: { [unowned self] in !self.isPaused },
-            report: { [unowned self] results, content in self.show(results, content) }
+            report: { [unowned self] results, content in self.show(results, content, automatic: true) }
         )
         clipboard.start()
+
+        folders = FolderService(
+            pipeline: pipeline,
+            settings: { [unowned self] in self.settings.settings },
+            isActive: { [unowned self] in !self.isPaused },
+            report: { [unowned self] results in self.show(results, automatic: true) }
+        )
+        folders.update()
+        self.settings.onChange = { [unowned self] in self.folders.update() }
     }
 
     @concurrent private static func prune(_ backups: BackupStore, days: Int) async {
@@ -71,19 +84,17 @@ final class AppModel {
                 return results
             }
             activeJobs -= urls.count
-            finish(results, settings: settings)
+            show(results)
         }
     }
 
-    private func finish(_ results: [OptimizationResult], settings: Settings) {
+    /// Records files replaced in place and shows the toast. Automatic sources stay quiet
+    /// when nothing changed and nothing failed.
+    func show(_ results: [OptimizationResult], _ content: ToastContent? = nil, automatic: Bool = false) {
+        if automatic, !results.contains(where: { $0.improved || $0.error != nil }) { return }
         let replaced = results.filter { $0.backup != nil }
         let restore: (() -> Void)? = replaced.count == 1 ? { [weak self] in self?.restore(replaced[0]) } : nil
-        show(results, ToastContent(results: results, restore: restore))
-    }
-
-    /// Records files replaced in place and shows the toast.
-    func show(_ results: [OptimizationResult], _ content: ToastContent) {
-        let replaced = results.filter { $0.backup != nil }
+        let content = content ?? ToastContent(results: results, restore: restore)
         recents = Array((replaced.sorted { $0.saved > $1.saved } + recents).prefix(20))
         let settings = settings.settings
         if settings.sounds, results.contains(where: \.improved) { NSSound(named: "Pop")?.play() }

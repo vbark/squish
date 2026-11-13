@@ -64,9 +64,11 @@ struct PipelineTests {
         let values = try URL(filePath: file.path).resourceValues(forKeys: [.creationDateKey, .tagNamesKey])
         #expect(values.creationDate == created)
         #expect(values.tagNames == ["Blue"])
+        #expect(SelfWriteGuard.isMarked(file), "replaced file must carry the marker so folder events skip it")
 
         try pipeline().backups.restore(backup, to: file)
         #expect(try size(file) == 100)
+        #expect(SelfWriteGuard.isMarked(file), "a restored original must not be optimized again")
     }
 
     @Test func `output that is not smaller leaves the file alone`() async throws {
