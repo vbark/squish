@@ -51,6 +51,23 @@ struct ToastContent: Identifiable {
         }
     }
 
+    /// SVG conversions: name the PNGs that were made.
+    init(svgResults results: [OptimizationResult]) {
+        let made = results.filter { $0.error == nil }
+        title = made.count == 1 ? made[0].file.lastPathComponent : "\(made.count) PNGs"
+        if let error = results.compactMap(\.error).first {
+            body = .failure(made.isEmpty ? error.localizedDescription : "\(results.count - made.count) failed: \(error.localizedDescription)")
+        } else {
+            let pixels = made.count == 1 ? Self.pixelSize(of: made[0].file) : nil
+            body = .message("Created next to the SVG\(made.count == 1 ? "" : "s")" + (pixels.map { ", \($0)" } ?? "") + ".")
+        }
+    }
+
+    private static func pixelSize(of url: URL) -> String? {
+        guard let image = NSImageRep(contentsOf: url) else { return nil }
+        return "\(image.pixelsWide) × \(image.pixelsHigh) px, \(Format.bytes(Pipeline.fileSize(url)))"
+    }
+
     /// Plain text for system notifications.
     var summary: String {
         switch body {

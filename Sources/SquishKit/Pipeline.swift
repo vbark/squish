@@ -131,6 +131,8 @@ public struct Pipeline: Sendable {
         }
     }
 
+    public static func fileSize(_ url: URL) -> Int { size(of: url) ?? 0 }
+
     static func size(of url: URL) -> Int? {
         (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int
     }

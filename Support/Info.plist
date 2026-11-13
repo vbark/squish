@@ -24,6 +24,26 @@
 	<true/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Convert SVG to PNG with Squish</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>convertSVG</string>
+			<key>NSPortName</key>
+			<string>Squish</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.svg-image</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSHumanReadableCopyright</key>
 	<string>Licensed under the GNU GPL v3.</string>
 </dict>

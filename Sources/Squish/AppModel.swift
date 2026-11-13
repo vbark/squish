@@ -24,6 +24,8 @@ final class AppModel {
     @ObservationIgnored private(set) var clipboard: ClipboardService!
     @ObservationIgnored private var folders: FolderService!
 
+    @ObservationIgnored private let svgPanel = SVGPanelController()
+
     static let supportedTypes: [UTType] = OptimizerRegistry.standard.optimizers.flatMap(\.types)
 
     init() {
@@ -99,6 +101,57 @@ final class AppModel {
         let settings = settings.settings
         if settings.sounds, results.contains(where: \.improved) { NSSound(named: "Pop")?.play() }
         toast.show(content, style: settings.toastStyle)
+    }
+
+    func chooseSVGsToConvert() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.svg]
+        panel.prompt = "Choose"
+        panel.message = "Choose SVG files to convert to PNG."
+        NSApp.activate()
+        guard panel.runModal() == .OK else { return }
+        convertSVGs(panel.urls)
+    }
+
+    /// Asks for a scale, renders each SVG next to itself, then runs the PNG through the normal pipeline.
+    func convertSVGs(_ urls: [URL]) {
+        let svgs = urls.filter { UTType(filenameExtension: $0.pathExtension)?.conforms(to: .svg) == true }
+        guard !svgs.isEmpty else { return }
+        let settings = settings.settings
+        svgPanel.present(svgs, defaultScale: settings.svgScale, naming: settings.svgNaming) { [weak self] scale in
+            self?.render(svgs, scale: scale, settings: settings)
+        }
+    }
+
+    private func render(_ svgs: [URL], scale: Double, settings: Settings) {
+        let pipeline = pipeline
+        activeJobs += svgs.count
+        Task {
+            let results = await withTaskGroup(of: OptimizationResult.self) { group in
+                for svg in svgs {
+                    group.addTask { await Self.convert(svg, scale: scale, settings: settings, pipeline: pipeline) }
+                }
+                var results: [OptimizationResult] = []
+                for await result in group { results.append(result) }
+                return results
+            }
+            activeJobs -= svgs.count
+            recents = Array((results.filter { $0.error == nil } + recents).prefix(20))
+            let content = ToastContent(svgResults: results)
+            toast.show(content, style: settings.toastStyle)
+        }
+    }
+
+    @concurrent
+    private static func convert(_ svg: URL, scale: Double, settings: Settings, pipeline: Pipeline) async -> OptimizationResult {
+        do {
+            let png = try await SVG.render(svg, scale: scale, naming: settings.svgNaming, tools: pipeline.tools)
+            return await pipeline.optimizeFile(png, formats: settings.formats, backup: false)
+        } catch {
+            let squishError = error as? SquishError ?? .io(error.localizedDescription)
+            return OptimizationResult(file: svg, originalSize: 0, newSize: 0, duration: .zero, error: squishError)
+        }
     }
 
     func restore(_ result: OptimizationResult) {

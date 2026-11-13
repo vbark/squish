@@ -18,7 +18,13 @@ struct MenuPanel: View {
         }
         .frame(width: 320)
         .dropDestination(for: URL.self) { urls, _ in
-            model.optimize(urls.filter(\.isFileURL))
+            let files = urls.filter(\.isFileURL)
+            let svgs = files.filter { $0.pathExtension.lowercased() == "svg" }
+            model.optimize(files.filter { !svgs.contains($0) })
+            if !svgs.isEmpty {
+                dismiss()
+                model.convertSVGs(svgs)
+            }
             return true
         } isTargeted: { isDropTargeted = $0 }
         .overlay {
@@ -86,7 +92,7 @@ struct MenuPanel: View {
                 Image(systemName: "tray.and.arrow.down")
                     .font(.system(size: 22, weight: .light))
                     .foregroundStyle(.tertiary)
-                Text("Copy an image or drop files here to make them smaller.")
+                Text("Copy an image or drop files here to make them smaller. Drop SVGs to turn them into PNGs.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -123,6 +129,10 @@ struct MenuPanel: View {
                 model.chooseFilesToOptimize()
             }
             .keyboardShortcut("o")
+            MenuRow(title: "Convert SVG to PNG…", shortcut: "") {
+                dismiss()
+                model.chooseSVGsToConvert()
+            }
             MenuRow(title: "Settings…", shortcut: "⌘,") {
                 dismiss()
                 openSettings()
