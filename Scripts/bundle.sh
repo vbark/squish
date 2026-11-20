@@ -10,6 +10,11 @@ CONFIG=${CONFIG:-release}
 APP=build/Squish.app
 IDENTITY=${SIGN_IDENTITY:--}
 
+# A fresh clone has no bundled tools yet: build the missing ones from source (about 10 minutes, once).
+for tool in cjpeg cwebp ffmpeg gifsicle jpegtran oxipng pngquant qpdf resvg webpmux; do
+  [[ -x Vendor/bin/$tool ]] || { Scripts/build-tools.sh; break; }
+done
+
 swift build -c "$CONFIG" --product Squish
 BIN=$(swift build -c "$CONFIG" --show-bin-path)
 
@@ -27,11 +32,7 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns" || echo "warning: icon not generated"
 
-if [[ -d Vendor/bin ]] && [[ -n "$(ls Vendor/bin)" ]]; then
-  cp Vendor/bin/* "$APP/Contents/Resources/bin/"
-else
-  echo "warning: Vendor/bin is empty. Run Scripts/build-tools.sh, or optimizations will report missing tools."
-fi
+cp Vendor/bin/* "$APP/Contents/Resources/bin/"
 
 # Sign inside out: bundled tools first, then the app. Hardened runtime only with a real identity.
 RUNTIME=()
@@ -39,5 +40,6 @@ RUNTIME=()
 for tool in "$APP"/Contents/Resources/bin/*(N); do
   codesign --force --sign "$IDENTITY" "${RUNTIME[@]}" "$tool"
 done
-codesign --force --sign "$IDENTITY" "${RUNTIME[@]}" "$APP"
+# The entitlement lets the hardened runtime send Apple Events (reading the Finder selection).
+codesign --force --sign "$IDENTITY" "${RUNTIME[@]}" --entitlements Support/Squish.entitlements "$APP"
 echo "Built $APP"

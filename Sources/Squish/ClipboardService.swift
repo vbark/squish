@@ -16,8 +16,9 @@ final class ClipboardService {
     @ObservationIgnored private let currentSettings: () -> Settings
     @ObservationIgnored private let isActive: () -> Bool
     @ObservationIgnored private let report: ([OptimizationResult], ToastContent) -> Void
+    /// Starts the "Squishing…" feedback; returns the call that ends it.
+    @ObservationIgnored private let beginWork: (String) -> () -> Void
     @ObservationIgnored private var lastChange = NSPasteboard.general.changeCount
-    @ObservationIgnored private var lastActivity = ContinuousClock.now
     @ObservationIgnored private var loop: Task<Void, Never>?
 
     private static let log = Logger.squish("Clipboard")
@@ -31,8 +32,10 @@ final class ClipboardService {
         pipeline: Pipeline,
         settings: @escaping () -> Settings,
         isActive: @escaping () -> Bool,
-        report: @escaping ([OptimizationResult], ToastContent) -> Void
+        report: @escaping ([OptimizationResult], ToastContent) -> Void,
+        beginWork: @escaping (String) -> () -> Void
     ) {
+        self.beginWork = beginWork
         self.pipeline = pipeline
         self.currentSettings = settings
         self.isActive = isActive
@@ -49,19 +52,21 @@ final class ClipboardService {
         }
     }
 
-    /// Reading `changeCount` is cheap and silent; still back off when nothing has been copied for a while.
+    /// Reading `changeCount` is cheap and silent. Copies come from the user, so poll fast while they are
+    /// at the keyboard or mouse and back off when they step away.
     private var interval: Duration {
-        let idle = ContinuousClock.now - lastActivity
-        if idle < .seconds(30) { return .milliseconds(500) }
-        if idle < .seconds(300) { return .seconds(1) }
+        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: Self.anyInput)
+        if idle < 30 { return .milliseconds(150) }
+        if idle < 300 { return .milliseconds(500) }
         return .seconds(2)
     }
+
+    private static let anyInput = CGEventType(rawValue: ~0)!
 
     private func tick() {
         let count = pasteboard.changeCount
         guard count != lastChange else { return }
         lastChange = count
-        lastActivity = .now
 
         let settings = currentSettings()
         guard isActive(), settings.clipboardEnabled else { return }
@@ -83,7 +88,9 @@ final class ClipboardService {
         // This read is what triggers the macOS privacy alert. nil means denied or already gone.
         guard let data = pasteboard.data(forType: NSPasteboard.PasteboardType(type.identifier)) else { return }
         let pipeline = pipeline
+        let endWork = beginWork("Clipboard image")
         Task {
+            defer { endWork() }
             let (result, output) = await Self.optimize(data, type: type, pipeline: pipeline, formats: settings.formats)
             guard pasteboard.changeCount == changeCount else { return } // the user copied something else meanwhile
             if let output {
@@ -149,7 +156,9 @@ final class ClipboardService {
         }
         guard !candidates.isEmpty else { return }
         let pipeline = pipeline
+        let endWork = beginWork(candidates.count == 1 ? candidates[0].lastPathComponent : "\(candidates.count) copied files")
         Task {
+            defer { endWork() }
             var outputs: [URL: URL] = [:]
             let results = await withTaskGroup(of: (URL, OptimizationResult, URL).self) { group in
                 for url in candidates {

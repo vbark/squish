@@ -42,7 +42,7 @@ public struct AudioOptimizer: Optimizer {
     }
 
     /// 64 kbps at the bottom of the slider, 256 kbps at the top, in steps of 32.
-    static func bitrate(quality: Int) -> Int {
+    public static func bitrate(quality: Int) -> Int {
         max(64, min(256, Int((Double(quality) * 2.56 / 32).rounded()) * 32))
     }
 }

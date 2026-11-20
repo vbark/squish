@@ -49,9 +49,26 @@ public enum SVGNaming: String, Codable, CaseIterable, Sendable {
     case dimensions
 }
 
-public struct WatchedFolder: Codable, Equatable, Identifiable, Sendable {
+/// A folder Squish watches. Paths are home-relative (`~/Desktop`) so one settings file works on every Mac.
+public protocol WatchedLocation {
+    var path: String { get }
+    var enabled: Bool { get }
+    var recursive: Bool { get }
+}
+
+extension WatchedLocation {
+    public var url: URL {
+        URL(filePath: (path as NSString).expandingTildeInPath, directoryHint: .isDirectory)
+    }
+
+    static func homeRelative(_ url: URL) -> String {
+        (url.path as NSString).abbreviatingWithTildeInPath
+    }
+}
+
+/// A folder whose new files are optimized in place.
+public struct WatchedFolder: WatchedLocation, Codable, Equatable, Identifiable, Sendable {
     public var id = UUID()
-    /// Home-relative (`~/Desktop`) so the same settings file works on every Mac.
     public var path: String
     public var enabled = true
     public var kinds: Set<FileKind> = [.image]
@@ -62,11 +79,7 @@ public struct WatchedFolder: Codable, Equatable, Identifiable, Sendable {
     }
 
     public init(url: URL) {
-        self.path = (url.path as NSString).abbreviatingWithTildeInPath
-    }
-
-    public var url: URL {
-        URL(filePath: (path as NSString).expandingTildeInPath, directoryHint: .isDirectory)
+        self.path = Self.homeRelative(url)
     }
 
     // Decoded by hand so folders written by older versions still load.
@@ -77,6 +90,41 @@ public struct WatchedFolder: Codable, Equatable, Identifiable, Sendable {
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         kinds = try c.decodeIfPresent(Set<FileKind>.self, forKey: .kinds) ?? [.image]
         recursive = try c.decodeIfPresent(Bool.self, forKey: .recursive) ?? false
+    }
+}
+
+/// A folder whose new or changed SVGs get a PNG copy next to them, one per scale.
+public struct SVGFolder: WatchedLocation, Codable, Equatable, Identifiable, Sendable {
+    public var id = UUID()
+    public var path: String
+    public var enabled = true
+    /// Sorted, never empty.
+    public var scales: [Double] = [1] {
+        didSet { scales = Self.normalized(scales) }
+    }
+    public var recursive = false
+
+    public init(path: String, scales: [Double] = [1]) {
+        self.path = path
+        self.scales = Self.normalized(scales)
+    }
+
+    public init(url: URL, scales: [Double] = [1]) {
+        self.init(path: Self.homeRelative(url), scales: scales)
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        path = try c.decode(String.self, forKey: .path)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        scales = Self.normalized(try c.decodeIfPresent([Double].self, forKey: .scales) ?? [1])
+        recursive = try c.decodeIfPresent(Bool.self, forKey: .recursive) ?? false
+    }
+
+    static func normalized(_ scales: [Double]) -> [Double] {
+        let valid = Set(scales.filter { $0 > 0 && $0 <= 16 }).sorted()
+        return valid.isEmpty ? [1] : valid
     }
 }
 
@@ -91,6 +139,9 @@ public struct Settings: Codable, Equatable, Sendable {
     public var formats = FormatSettings()
     public var svgScale = 1.0
     public var svgNaming = SVGNaming.scaleSuffix
+    public var svgFolders: [SVGFolder] = []
+    /// None by default, so nothing collides with shortcuts from other apps until the user picks one.
+    public var shortcuts = ShortcutMap()
     /// 0 means automatic, so Macs with different core counts can share one file.
     public var concurrency = 0
     public var backupDays = 7

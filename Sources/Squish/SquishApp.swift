@@ -21,6 +21,7 @@ struct SquishApp: App {
                 .environment(model)
                 .environment(model.settings)
         }
+        .windowResizability(.contentSize)
     }
 }
 

@@ -9,6 +9,12 @@ struct ToastContent: Identifiable {
         case saved(before: Int, after: Int, note: String?)
         case message(String)
         case failure(String)
+        /// A job is running. Replaced by the result when it finishes.
+        case working
+    }
+
+    var isWorking: Bool {
+        if case .working = body { true } else { false }
     }
 
     let id = UUID()
@@ -75,6 +81,8 @@ struct ToastContent: Identifiable {
             "\(Format.percentSaved(before: before, after: after)) smaller, now \(Format.bytes(after)). " + (note ?? "")
         case .message(let text), .failure(let text):
             text
+        case .working:
+            "Squishing…"
         }
     }
 }
@@ -98,15 +106,59 @@ final class ToastPresenter {
     @ObservationIgnored private var dismissTask: Task<Void, Never>?
 
     var isHovering = false {
-        didSet { isHovering ? dismissTask?.cancel() : scheduleDismiss() }
+        didSet {
+            if isHovering { dismissTask?.cancel() } else if content?.isWorking != true { scheduleDismiss() }
+        }
+    }
+
+    /// Jobs in progress, by id, with the name to show.
+    @ObservationIgnored private var working: [UUID: String] = [:]
+
+    /// Call when a job starts. If it is still running after a moment, a "Squishing…" card appears,
+    /// so slow files get feedback right away and fast ones don't flash. Call `endWork` when it is done.
+    func beginWork(_ title: String, style: ToastStyle) -> UUID {
+        let id = UUID()
+        working[id] = title
+        guard !usesNotifications(style) else { return id }
+        Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            // Don't cover a result the user may still be reading.
+            guard working[id] != nil, content == nil || content?.isWorking == true else { return }
+            present(ToastContent(title: workingTitle, body: .working))
+            dismissTask?.cancel()
+        }
+        return id
+    }
+
+    func endWork(_ id: UUID) {
+        working[id] = nil
+        guard content?.isWorking == true else { return }
+        if working.isEmpty {
+            dismiss()
+        } else {
+            present(ToastContent(title: workingTitle, body: .working))
+        }
+    }
+
+    private var workingTitle: String {
+        working.count == 1 ? working.values.first! : "\(working.count) files"
+    }
+
+    /// Notifications need a real app bundle; `swift run` falls back to the panel.
+    private func usesNotifications(_ style: ToastStyle) -> Bool {
+        style == .notification && Bundle.main.bundleIdentifier != nil
     }
 
     func show(_ content: ToastContent, style: ToastStyle) {
-        // Notifications need a real app bundle; `swift run` falls back to the panel.
-        if style == .notification, Bundle.main.bundleIdentifier != nil {
+        if usesNotifications(style) {
             notify(content)
             return
         }
+        present(content)
+        scheduleDismiss()
+    }
+
+    private func present(_ content: ToastContent) {
         self.content = content
         let panel = panel ?? makePanel()
         self.panel = panel
@@ -119,7 +171,6 @@ final class ToastPresenter {
             panel.setFrameTopLeftPoint(NSPoint(x: frame.maxX - panel.frame.width - 10, y: frame.maxY - 8))
         }
         panel.orderFrontRegardless()
-        scheduleDismiss()
     }
 
     func dismiss() {
@@ -213,6 +264,11 @@ private struct ToastCard: View {
                     Text(text).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
                 } icon: {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                }
+            case .working:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Squishing…").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }
         }

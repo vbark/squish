@@ -12,25 +12,24 @@ Requires macOS 14 or later. Licensed under the [GNU GPL v3](LICENSE).
 - **Folders.** New or changed files in watched folders (Desktop and Downloads by default) are optimized in place once they stop changing. In-progress downloads (`.download`, `.crdownload`, `.part`…) are ignored, cloud placeholders in iCloud Drive or OneDrive are never downloaded, and files already there when Squish starts are left alone. Each folder has its own file types and subfolder setting.
 - **Backups.** Every replaced original is kept in `~/Library/Caches/app.squish.Squish/backups` for 7 days (configurable). Restore from the toast.
 - **SVG to PNG.** From the menu, by dropping SVGs on the menu panel, or with Finder's **Services › Convert SVG to PNG with Squish**. Pick 0.5×, 1×, 2×, 3× or any scale and see the pixel size live. Output goes next to the SVG as `icon@2x.png` or `icon-512x512.png`, and never overwrites the SVG or a PNG you made.
+- **Auto-convert SVG folders.** Under Settings › SVG, add folders (an icons folder, say) and pick one or more sizes for each. Every new or changed SVG saved there gets a PNG copy per size, optimized like any PNG. The SVG stays, a PNG you made yourself is never replaced or duplicated, and **Convert Existing** handles the SVGs already in the folder.
+- **Keyboard shortcuts.** Settings › Shortcuts lets you record system-wide shortcuts to optimize the files selected in Finder, convert the selected SVGs to PNG, open the file picker, or pause. Squish reads the Finder selection with Apple Events, so macOS asks once for permission to control Finder.
+- **Stats.** Settings › Stats shows what Squish saved today, this week, month, year or all time: by kind, by day, records (heaviest file, best compression, biggest win), streaks, habits, a 30-week heatmap and a breakdown by Mac. Stats sync through the sync folder, one file per Mac, so Macs never overwrite each other.
 - **Lossless by default.** Lossy mode with a quality slider per format. Video and audio are always re-encoded, and a result is only kept when it is smaller.
 - **Settings sync.** General › Sync settings keeps a `settings.json` in iCloud Drive, OneDrive or any folder. Every Mac using the folder picks up changes within 15 seconds; the newest change wins. Watched folders are stored as `~/…` so the file works on every Mac.
 
 ## Build
 
-Everything is a Swift package. Xcode 16 or later is recommended; Command Line Tools with Swift 6.2 or later also work.
+You need Swift 6.2 or later (Xcode 26 or its Command Line Tools) and [Homebrew](https://brew.sh).
 
 ```sh
-# 1. Build the bundled tools from pinned source (one time, about 10 minutes)
-brew install rustup cmake nasm && rustup default stable
-Scripts/build-tools.sh            # universal static binaries in Vendor/bin
-
-# 2. Build, sign (ad-hoc) and run
-Scripts/bundle.sh                 # build/Squish.app
+git clone https://github.com/vbark/squish.git && cd squish
+brew install rustup cmake nasm
+Scripts/bundle.sh                 # build/Squish.app, ad-hoc signed
 open build/Squish.app
-
-# 3. Optional: a DMG
-Scripts/package-dmg.sh            # build/Squish-<version>.dmg
 ```
+
+The first `Scripts/bundle.sh` also builds the bundled optimizers from pinned source into `Vendor/bin`. That takes about 10 minutes, once. Later builds take seconds. `Scripts/package-dmg.sh` makes `build/Squish-<version>.dmg`.
 
 For a quick loop without bundling: `SQUISH_BIN_DIR=$PWD/Vendor/bin swift run Squish`.
 
@@ -47,12 +46,14 @@ swift test -Xswiftc -load-plugin-library \
   -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib
 ```
 
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
+
 ## Layout
 
 | Path | Job |
 |---|---|
 | `Sources/SquishKit` | Settings model and sync file, optimizer protocol, registry and one optimizer per format, tool runner, pipeline with a concurrency limit, backups, folder events, self-write guard, SVG sizing and rendering |
-| `Sources/Squish` | The menu bar app: menu panel, toast, settings window, clipboard and folder services, SVG popup and Services provider |
+| `Sources/Squish` | The menu bar app: menu panel, toast, settings window and its theme, clipboard and folder services, SVG popup and Services provider, global shortcuts and Finder selection |
 | `Tests/SquishKitTests` | Unit tests (registry, settings decoding, stability, loop prevention, folder rules, clipboard rules, SVG sizes and names) and fixture tests |
 | `Scripts/build-tools.sh` | Builds pinned optimizer versions from source as universal static binaries |
 | `Scripts/bundle.sh`, `Scripts/package-dmg.sh` | Assemble, sign, package and optionally notarize |
@@ -91,3 +92,4 @@ This signs the bundled tools and the app with the hardened runtime, builds the D
 - Lossy HEIC re-encoding drops HDR gain maps.
 - MP3 is only stripped of tags; WAV and AIFF are not supported, because changing the format would rename the file.
 - Settings sync replaces the whole settings file; there is no per-setting merge.
+- Shortcuts for selected files read the selection from Finder only, not from other file managers. Folders in the selection are skipped.

@@ -64,7 +64,7 @@ public enum FolderRules {
     static let partialExtensions: Set<String> = ["download", "crdownload", "part", "partial", "tmp", "opdownload", "filepart"]
 
     /// The watched folder an event belongs to, honoring each folder's recursive setting.
-    public static func folder(for path: String, in folders: [WatchedFolder]) -> WatchedFolder? {
+    public static func folder<Folder: WatchedLocation>(for path: String, in folders: [Folder]) -> Folder? {
         let file = URL(filePath: path)
         let parent = file.deletingLastPathComponent().standardizedFileURL.path
         return folders
@@ -79,12 +79,29 @@ public enum FolderRules {
     /// Cheap checks on the name alone, before touching the file.
     public static func shouldConsider(_ path: String, folder: WatchedFolder) -> Bool {
         let url = URL(filePath: path)
+        guard isCandidate(url) else { return false }
+        guard let type = UTType(filenameExtension: url.pathExtension.lowercased()), let kind = FileKind(type: type) else { return false }
+        return folder.kinds.contains(kind)
+    }
+
+    /// A visible, finished `.svg` file, judged by its name alone.
+    public static func isSVG(_ path: String) -> Bool {
+        let url = URL(filePath: path)
+        return isCandidate(url) && url.pathExtension.lowercased() == "svg"
+    }
+
+    /// Not hidden, not an Office lock file, not a download in progress.
+    static func isCandidate(_ url: URL) -> Bool {
         let name = url.lastPathComponent
         if name.hasPrefix(".") || name.hasPrefix("~$") { return false }
-        let ext = url.pathExtension.lowercased()
-        if partialExtensions.contains(ext) { return false }
-        guard let type = UTType(filenameExtension: ext), let kind = FileKind(type: type) else { return false }
-        return folder.kinds.contains(kind)
+        return !partialExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// Drops paths inside another path in the list. FSEvents always watches whole trees,
+    /// so nested paths would only report the same event twice.
+    public static func outermost(_ paths: [String]) -> [String] {
+        let unique = Array(Set(paths.map { URL(filePath: $0).standardizedFileURL.path }))
+        return unique.filter { path in !unique.contains { $0 != path && path.hasPrefix($0 + "/") } }.sorted()
     }
 }
 
@@ -102,27 +119,47 @@ public enum FileState {
         return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG
     }
 
-    /// Waits until size and modification date are unchanged across two checks `interval` apart.
-    /// Returns false if the file disappears or never settles within `timeout`.
+    /// Waits until the file has stopped changing: size and modification date unchanged for `quiet`,
+    /// checked every `interval`. Returns false if the file disappears or never settles within `timeout`.
+    ///
+    /// Files saved with an atomic rename (screenshots, most apps) are complete when they appear, so they
+    /// settle after `quiet`. A file still being written keeps changing and is never handed over half done.
     public static func waitUntilStable(
-        _ url: URL, interval: Duration = .seconds(1), timeout: Duration = .seconds(600)
+        _ url: URL, interval: Duration = .milliseconds(250), quiet: Duration = .milliseconds(500),
+        timeout: Duration = .seconds(600)
     ) async -> Bool {
-        func snapshot() -> [AnyHashable]? {
+        func snapshot() -> (size: Int, modified: Date)? {
             guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
                   let size = attributes[.size] as? Int, size > 0,
                   let modified = attributes[.modificationDate] as? Date
             else { return nil }
-            return [size, modified]
+            return (size, modified)
         }
-        let deadline = ContinuousClock.now + timeout
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
         var previous = snapshot()
-        while ContinuousClock.now < deadline {
+        var unchangedSince = clock.now
+        let quietSeconds = Double(quiet.components.seconds) + Double(quiet.components.attoseconds) / 1e18
+        while clock.now < deadline {
             try? await Task.sleep(for: interval)
             if Task.isCancelled { return false }
             let current = snapshot()
-            if let current, current == previous { return true }
-            if current == nil, !FileManager.default.fileExists(atPath: url.path) { return false }
-            previous = current
+            guard let current else {
+                if !FileManager.default.fileExists(atPath: url.path) { return false }
+                previous = nil
+                unchangedSince = clock.now
+                continue
+            }
+            guard let last = previous, last.size == current.size, last.modified == current.modified else {
+                previous = current
+                unchangedSince = clock.now
+                continue
+            }
+            // Unchanged since the last check. Settled once nothing has touched it for `quiet`,
+            // judged by our own observation or by the file's own date (a file moved in keeps its old date).
+            if clock.now - unchangedSince >= quiet || -current.modified.timeIntervalSinceNow >= quietSeconds {
+                return true
+            }
         }
         return false
     }

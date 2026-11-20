@@ -79,6 +79,59 @@ public enum SVG {
         return output
     }
 
+    /// What to do when the PNG's name is taken by a file Squish did not make.
+    public enum Conflict: Sendable {
+        /// Write `icon 2.png` instead. For conversions the user asked for.
+        case rename
+        /// Leave it and make nothing. For automatic conversions, so a watched folder never fills with copies.
+        case skip
+    }
+
+    /// Renders `svg` at `scale`, then runs the PNG through the PNG optimizer.
+    /// Returns nil when `conflict` is `.skip` and a PNG the user made already has the name.
+    @concurrent
+    public static func convert(
+        _ svg: URL, scale: Double, naming: SVGNaming, formats: FormatSettings, pipeline: Pipeline, conflict: Conflict = .rename
+    ) async -> OptimizationResult? {
+        do {
+            if conflict == .skip {
+                let pixels = pixelSize(try intrinsicSize(of: svg), scale: scale)
+                let target = svg.deletingLastPathComponent()
+                    .appending(path: outputName(for: svg, scale: scale, naming: naming, pixels: pixels))
+                if FileManager.default.fileExists(atPath: target.path), !SelfWriteGuard.isMarked(target) { return nil }
+            }
+            // Rendering shares the optimizer's concurrency limit, so converting hundreds of SVGs at once
+            // doesn't start hundreds of resvg processes.
+            await pipeline.limiter.acquire()
+            let png: URL
+            do {
+                png = try await render(svg, scale: scale, naming: naming, tools: pipeline.tools)
+            } catch {
+                await pipeline.limiter.release()
+                throw error
+            }
+            await pipeline.limiter.release()
+            return await pipeline.optimizeFile(png, formats: formats, backup: false)
+        } catch {
+            let squishError = error as? SquishError ?? .io(error.localizedDescription)
+            return OptimizationResult(file: svg, originalSize: 0, newSize: 0, duration: .zero, error: squishError)
+        }
+    }
+
+    /// Every SVG directly in `folder`, or in the whole tree when `recursive`. Skips hidden files and placeholders.
+    public static func files(in folder: URL, recursive: Bool) -> [URL] {
+        let keys: [URLResourceKey] = [.isRegularFileKey]
+        let options: FileManager.DirectoryEnumerationOptions = recursive
+            ? [.skipsHiddenFiles, .skipsPackageDescendants]
+            : [.skipsHiddenFiles, .skipsSubdirectoryDescendants, .skipsPackageDescendants]
+        guard let enumerator = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: keys, options: options) else {
+            return []
+        }
+        return enumerator.compactMap { $0 as? URL }
+            .filter { FolderRules.isSVG($0.path) && FileState.isRegularFile($0) && !FileState.isDataless($0) }
+            .sorted { $0.path < $1.path }
+    }
+
     static func length(_ value: String?, relativeTo reference: Double?) -> Double? {
         guard var text = value?.trimmingCharacters(in: .whitespaces), !text.isEmpty else { return nil }
         if text.hasSuffix("%") {

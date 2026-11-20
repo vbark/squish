@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Builds the bundled optimizers from pinned source as universal (arm64 + x86_64) binaries in Vendor/bin.
 # Everything is linked statically against nothing but macOS system libraries.
-# Prerequisites: brew install rustup cmake nasm && rustup default stable
+# Prerequisites: brew install rustup cmake nasm
 # This script is also the "corresponding source" record for the GPL/LGPL tools we ship.
 #   Scripts/build-tools.sh            build everything missing from Vendor/bin
 #   Scripts/build-tools.sh ffmpeg     rebuild one tool
@@ -28,8 +28,10 @@ JOBS=$(sysctl -n hw.ncpu)
 CMAKE_COMMON=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_IGNORE_PREFIX_PATH="/opt/homebrew;/usr/local" -DBUILD_SHARED_LIBS=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 
 for cmd in cargo rustup cmake nasm git lipo curl; do
-  command -v $cmd >/dev/null || { echo "missing $cmd. Run: brew install rustup cmake nasm && rustup default stable"; exit 1; }
+  command -v $cmd >/dev/null || { echo "missing $cmd. Run: brew install rustup cmake nasm"; exit 1; }
 done
+# Homebrew's rustup is keg-only and starts with no toolchain.
+rustup default >/dev/null 2>&1 || rustup default stable
 rustup target add aarch64-apple-darwin x86_64-apple-darwin >/dev/null
 mkdir -p "$SRC" "$OUT"
 

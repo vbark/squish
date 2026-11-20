@@ -15,6 +15,24 @@ struct FileStabilityTests {
         #expect(await FileState.waitUntilStable(file, interval: .milliseconds(50), timeout: .seconds(2)))
     }
 
+    @Test func `a freshly saved file settles after half a second, not a full second`() async throws {
+        let file = dir.appending(path: "Screenshot.png")
+        try Data(count: 100).write(to: file)
+        let start = ContinuousClock.now
+        #expect(await FileState.waitUntilStable(file))
+        let elapsed = ContinuousClock.now - start
+        #expect(elapsed >= .milliseconds(450) && elapsed < .milliseconds(900), "took \(elapsed)")
+    }
+
+    @Test func `a file moved in with an old date settles at the first check`() async throws {
+        let file = dir.appending(path: "moved.png")
+        try Data(count: 100).write(to: file)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -3600)], ofItemAtPath: file.path)
+        let start = ContinuousClock.now
+        #expect(await FileState.waitUntilStable(file))
+        #expect(ContinuousClock.now - start < .milliseconds(450))
+    }
+
     @Test func `a growing file is not stable until it stops growing`() async throws {
         let file = dir.appending(path: "growing.png")
         try Data(count: 10).write(to: file)

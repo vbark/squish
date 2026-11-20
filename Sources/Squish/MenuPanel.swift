@@ -79,8 +79,8 @@ struct MenuPanel: View {
     private var status: String {
         if model.activeJobs > 0 { return "Optimizing \(model.activeJobs) file\(model.activeJobs == 1 ? "" : "s")…" }
         if model.isPaused { return "Paused" }
-        let saved = model.recents.reduce(0) { $0 + $1.saved }
-        return saved > 0 ? "Saved \(Format.bytes(saved)) so far" : "Ready"
+        let today = model.stats.report.report(for: .day).saved
+        return today > 0 ? "Saved \(Format.bytes(today)) today" : "Ready"
     }
 
     // MARK: Recents
