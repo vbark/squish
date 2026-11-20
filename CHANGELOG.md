@@ -2,6 +2,12 @@
 
 All notable changes to Squish are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- The README shows a demo GIF and screenshots of the Stats, Folders, Formats and SVG pages, in `assets/readme`. They were captured from a separate demo copy of the app with sample files, so they hold no personal data.
+
 ## [1.2.0] - 2026-11-14
 
 ### Added
@@ -84,6 +90,7 @@ All notable changes to Squish are recorded here. The format follows [Keep a Chan
 - Settings sync through a `settings.json` in iCloud Drive, OneDrive or any folder.
 - DMG packaging with optional Developer ID signing and notarization.
 
+[Unreleased]: https://github.com/vbark/squish/compare/v1.2.0...HEAD
 [1.2.0]: https://github.com/vbark/squish/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/vbark/squish/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/vbark/squish/releases/tag/v1.0.0

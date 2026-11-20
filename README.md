@@ -6,6 +6,8 @@ A free, open-source macOS menu bar app that makes media smaller. It watches your
 
 Requires macOS 14 or later. Licensed under the [GNU GPL v3](LICENSE).
 
+<p align="center"><img src="assets/readme/demo.gif" width="430" alt="A screenshot saved to a watched folder shrinks by 21 % and a JPEG by 5 %. Each shows a result card, then the menu lists both files and the total saved today."></p>
+
 ## What it does
 
 - **Clipboard.** Copy an image (PNG, JPEG, HEIC, GIF, WebP, TIFF) and the clipboard gets a smaller version. TIFF, which many apps copy, becomes PNG. Copied files (video, audio and PDF too, when switched on) are replaced on the clipboard by optimized copies; the originals on disk are never touched. Squish marks what it writes and never processes its own output, and skips anything password managers mark as concealed.
@@ -17,6 +19,14 @@ Requires macOS 14 or later. Licensed under the [GNU GPL v3](LICENSE).
 - **Stats.** Settings › Stats shows what Squish saved today, this week, month, year or all time: by kind, by day, records (heaviest file, best compression, biggest win), streaks, habits, a 30-week heatmap and a breakdown by Mac. Stats sync through the sync folder, one file per Mac, so Macs never overwrite each other.
 - **Lossless by default.** Lossy mode with a quality slider per format. Video and audio are always re-encoded, and a result is only kept when it is smaller.
 - **Settings sync.** General › Sync settings keeps a `settings.json` in iCloud Drive, OneDrive or any folder. Every Mac using the folder picks up changes within 15 seconds; the newest change wins. Watched folders are stored as `~/…` so the file works on every Mac.
+
+## Screenshots
+
+| Stats | Watched folders |
+|---|---|
+| <img src="assets/readme/stats.png" alt="Stats page: 578 kB saved this week across 13 files, savings by kind and daily activity"> | <img src="assets/readme/folders.png" alt="Folders page: Desktop and Downloads watched for new images"> |
+| **Formats** | **SVG to PNG** |
+| <img src="assets/readme/formats.png" alt="Formats page: lossless or lossy per format, and quality sliders for video and audio"> | <img src="assets/readme/svg.png" alt="SVG page: default scale, file naming, and an Icons folder converted at 1x and 2x"> |
 
 ## Build
 
